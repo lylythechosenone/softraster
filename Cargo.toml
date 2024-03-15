@@ -2,3 +2,8 @@
 name = "softraster"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+raw-window-handle = "0.6.0"
+wgpu-hal = { version = "0.19.3", default-features = false }
+wgpu-types = "0.19.2"
