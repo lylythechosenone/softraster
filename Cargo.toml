@@ -2,3 +2,11 @@
 name = "softraster"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+heapless = "0.8.0"
+llvm-sys = "170.0.1"
+naga = { version = "0.19.0", features = ["clone"] }
+
+[dev-dependencies]
+naga = { version = "0.19.0", features = ["wgsl-in"] }
