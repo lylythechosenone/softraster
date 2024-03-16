@@ -78,32 +78,44 @@ impl Generator {
                 Index::Constant(constant) => self.const_u64(constant as u64),
             };
 
-            let item_type = self.item_type(
-                span,
-                ty,
-                match index {
-                    Index::Dynamic(_) => None,
-                    Index::Constant(constant) => Some(constant),
+            let index = match index {
+                Index::Constant(constant) => Ok(constant),
+                Index::Dynamic(expr) => match location.get_exprs(&self.module)[expr] {
+                    Expression::Literal(Literal::U32(v)) => Ok(v as usize),
+                    Expression::ZeroValue(_) => Ok(0),
+                    _ => Err(Error {
+                        info: Info::NonConstantIndex,
+                        span,
+                    }),
                 },
-            )?;
+            };
+
+            let item_type = self.item_type(span, ty, index.as_ref().ok().copied())?;
+
             Ok((
-                if let TypeInner::Vector { .. } = self.module.src.types[ty].inner {
-                    unsafe { LLVMBuildExtractElement(self.builder.0, base, llvm_index, EMPTY_CSTR) }
-                } else {
-                    let index = match index {
-                        Index::Constant(constant) => constant,
-                        Index::Dynamic(expr) => match location.get_exprs(&self.module)[expr] {
-                            Expression::Literal(Literal::U32(v)) => v as usize,
-                            Expression::ZeroValue(_) => 0,
-                            _ => {
-                                return Err(Error {
-                                    info: Info::NonConstantIndex,
-                                    span,
-                                })
-                            }
-                        },
-                    };
-                    unsafe { LLVMBuildExtractValue(self.builder.0, base, index as u32, EMPTY_CSTR) }
+                match self.module.src.types[ty].inner {
+                    TypeInner::Vector { .. } => unsafe {
+                        LLVMBuildExtractElement(self.builder.0, base, llvm_index, EMPTY_CSTR)
+                    },
+                    TypeInner::Matrix { rows, .. } => {
+                        let swizzle_base = index? * rows as usize;
+                        self.build_swizzle(
+                            span,
+                            rows,
+                            base,
+                            ty,
+                            [
+                                swizzle_base,
+                                swizzle_base + 1,
+                                swizzle_base + 2,
+                                swizzle_base + 3,
+                            ],
+                        )?
+                        .0
+                    }
+                    _ => unsafe {
+                        LLVMBuildExtractValue(self.builder.0, base, index? as u32, EMPTY_CSTR)
+                    },
                 },
                 item_type,
             ))

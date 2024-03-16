@@ -7,25 +7,22 @@ use llvm_sys::{
     },
     LLVMValue,
 };
-use naga::{Expression, Handle, Span, SwizzleComponent, Type, TypeInner, VectorSize};
+use naga::{Handle, Span, Type, TypeInner, VectorSize};
 
 use crate::codegen::{
     error::{Error, Info},
     Generator, EMPTY_CSTR,
 };
 
-use super::location::Location;
-
 impl Generator {
-    pub(super) fn build_swizzle<L: Location>(
+    pub(super) fn build_swizzle(
         &mut self,
-        location: &L,
         span: Span,
         size: VectorSize,
-        vector: Handle<Expression>,
-        pattern: [SwizzleComponent; 4],
+        vector: *mut LLVMValue,
+        ty: Handle<Type>,
+        pattern: [usize; 4],
     ) -> Result<(*mut LLVMValue, Handle<Type>), Error> {
-        let (vector, ty) = self.eval_cached_expr(location, vector)?;
         let TypeInner::Vector {
             scalar,
             size: in_size,
@@ -43,9 +40,9 @@ impl Generator {
                 let mut mask = LLVMGetUndef(LLVMVectorType(u64_ty, size as c_uint));
 
                 for (i, &pattern) in pattern.iter().enumerate().take(size as usize) {
-                    if pattern as usize > in_size as usize {
+                    if pattern > in_size as usize {
                         return Err(Error {
-                            info: Info::NoSuchComponent(ty, pattern as usize),
+                            info: Info::NoSuchComponent(ty, pattern),
                             span,
                         });
                     }

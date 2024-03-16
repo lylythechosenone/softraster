@@ -56,7 +56,21 @@ impl Generator {
                 size,
                 vector,
                 pattern,
-            } => self.build_swizzle(location, span, size, vector, pattern),
+            } => {
+                let (vector, ty) = self.eval_cached_expr(location, vector)?;
+                self.build_swizzle(
+                    span,
+                    size,
+                    vector,
+                    ty,
+                    [
+                        pattern[0] as usize,
+                        pattern[1] as usize,
+                        pattern[2] as usize,
+                        pattern[3] as usize,
+                    ],
+                )
+            }
             &Expression::FunctionArgument(index) => Ok(location.get_params()[index as usize]),
             Expression::GlobalVariable(handle) => Ok(self.globals[handle.index()]),
             Expression::LocalVariable(handle) => Ok(location.get_locals()[handle.index()]),
