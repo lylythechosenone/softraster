@@ -1,9 +1,9 @@
-use wgpu_hal::BufferCopy;
+use wgpu_hal::{BufferCopy, FenceValue};
 use wgpu_types::TextureDimension;
 
-use super::Api;
+use super::{fence::Fence, Api};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Command {
     Clear {
         buffer: *mut [u8],
@@ -31,15 +31,20 @@ pub enum Command {
         columns: usize,
         depth: usize,
     },
+
+    Signal {
+        fence: &'static Fence,
+        value: FenceValue,
+    },
 }
 unsafe impl Send for Command {}
 unsafe impl Sync for Command {}
 
 #[derive(Debug)]
-pub struct CommandEncoder {
+pub struct Encoder {
     commands: Vec<Command>,
 }
-impl wgpu_hal::CommandEncoder<Api> for CommandEncoder {
+impl wgpu_hal::CommandEncoder<Api> for Encoder {
     unsafe fn begin_encoding(
         &mut self,
         _label: wgpu_hal::Label,

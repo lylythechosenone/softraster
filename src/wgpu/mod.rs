@@ -1,12 +1,13 @@
-#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_truncation, clippy::cast_lossless)]
 
 use std::{alloc::Layout, borrow::Borrow};
 
-use self::{command_encoder::Command, texture::Texture};
+use self::{command::Command, fence::Fence, texture::Texture};
 
 pub mod adapter;
-pub mod command_encoder;
+pub mod command;
 pub mod device;
+pub mod fence;
 pub mod instance;
 pub mod queue;
 pub mod surface;
@@ -35,7 +36,7 @@ impl wgpu_hal::Api for Api {
     type Adapter = adapter::Adapter;
     type Device = device::Device;
     type Queue = queue::Queue;
-    type CommandEncoder = command_encoder::CommandEncoder;
+    type CommandEncoder = command::Encoder;
     type CommandBuffer = Vec<Command>;
     type Buffer = Box<[u8]>;
     type Texture = Texture;
@@ -43,7 +44,7 @@ impl wgpu_hal::Api for Api {
     type TextureView = Todo;
     type Sampler = Todo;
     type QuerySet = Todo;
-    type Fence = Todo;
+    type Fence = Fence;
     type BindGroupLayout = Todo;
     type BindGroup = Todo;
     type PipelineLayout = Todo;

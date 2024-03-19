@@ -1,13 +1,30 @@
-use super::Api;
+use std::sync::{Arc, Mutex};
 
-pub struct Queue;
+use super::{command::Command, Api};
+
+pub struct Queue {
+    commands: Arc<Mutex<Vec<Command>>>,
+}
 impl wgpu_hal::Queue<Api> for Queue {
     unsafe fn submit(
         &self,
         command_buffers: &[&<Api as wgpu_hal::Api>::CommandBuffer],
         signal_fence: Option<(&mut <Api as wgpu_hal::Api>::Fence, wgpu_hal::FenceValue)>,
     ) -> Result<(), wgpu_hal::DeviceError> {
-        todo!()
+        let mut lock = self.commands.lock().unwrap();
+
+        for buffer in command_buffers {
+            lock.extend_from_slice(buffer);
+        }
+
+        if let Some((fence, value)) = signal_fence {
+            lock.push(Command::Signal {
+                fence: &*std::ptr::from_ref(fence),
+                value,
+            });
+        }
+
+        Ok(())
     }
 
     unsafe fn present(

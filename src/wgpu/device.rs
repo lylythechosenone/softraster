@@ -2,7 +2,7 @@ use std::{alloc::Layout, ptr::NonNull};
 
 use wgpu_hal::DeviceError;
 
-use super::{texture::Texture, Api};
+use super::{fence::Fence, texture::Texture, Api};
 
 pub struct Device;
 impl wgpu_hal::Device<Api> for Device {
@@ -186,18 +186,16 @@ impl wgpu_hal::Device<Api> for Device {
     }
 
     unsafe fn create_fence(&self) -> Result<<Api as wgpu_hal::Api>::Fence, wgpu_hal::DeviceError> {
-        todo!()
+        Ok(Fence::new())
     }
 
-    unsafe fn destroy_fence(&self, fence: <Api as wgpu_hal::Api>::Fence) {
-        todo!()
-    }
+    unsafe fn destroy_fence(&self, _fence: <Api as wgpu_hal::Api>::Fence) {}
 
     unsafe fn get_fence_value(
         &self,
         fence: &<Api as wgpu_hal::Api>::Fence,
     ) -> Result<wgpu_hal::FenceValue, wgpu_hal::DeviceError> {
-        todo!()
+        Ok(fence.get_value())
     }
 
     unsafe fn wait(
@@ -206,7 +204,7 @@ impl wgpu_hal::Device<Api> for Device {
         value: wgpu_hal::FenceValue,
         timeout_ms: u32,
     ) -> Result<bool, wgpu_hal::DeviceError> {
-        todo!()
+        Ok(fence.wait(value, timeout_ms))
     }
 
     unsafe fn start_capture(&self) -> bool {
