@@ -1,30 +1,75 @@
+use wgpu_hal::BufferCopy;
+use wgpu_types::TextureDimension;
+
 use super::Api;
 
 #[derive(Debug)]
-pub struct CommandEncoder;
+pub enum Command {
+    Clear {
+        buffer: *mut [u8],
+    },
+    Copy {
+        src: *mut [u8],
+        dst: *mut u8,
+    },
+    Copy2 {
+        src: *mut u8,
+        dst: *mut u8,
+        src_pitch: usize,
+        dst_pitch: usize,
+        rows: usize,
+        columns: usize,
+    },
+    Copy3 {
+        src: *mut u8,
+        dst: *mut u8,
+        src_pitch: usize,
+        dst_pitch: usize,
+        src_depth_pitch: usize,
+        dst_depth_pitch: usize,
+        rows: usize,
+        columns: usize,
+        depth: usize,
+    },
+}
+unsafe impl Send for Command {}
+unsafe impl Sync for Command {}
+
+#[derive(Debug)]
+pub struct CommandEncoder {
+    commands: Vec<Command>,
+}
 impl wgpu_hal::CommandEncoder<Api> for CommandEncoder {
     unsafe fn begin_encoding(
         &mut self,
-        label: wgpu_hal::Label,
+        _label: wgpu_hal::Label,
     ) -> Result<(), wgpu_hal::DeviceError> {
-        todo!()
+        Ok(())
     }
 
     unsafe fn discard_encoding(&mut self) {
-        todo!()
+        self.commands.clear();
     }
 
     unsafe fn end_encoding(
         &mut self,
     ) -> Result<<Api as wgpu_hal::Api>::CommandBuffer, wgpu_hal::DeviceError> {
-        todo!()
+        let mut commands = Vec::new();
+        core::mem::swap(&mut self.commands, &mut commands);
+        Ok(commands)
     }
 
     unsafe fn reset_all<I>(&mut self, command_buffers: I)
     where
         I: Iterator<Item = <Api as wgpu_hal::Api>::CommandBuffer>,
     {
-        todo!()
+        for mut buffer in command_buffers {
+            if buffer.capacity() > self.commands.capacity() {
+                buffer.clear();
+                buffer.append(&mut self.commands);
+                self.commands = buffer;
+            }
+        }
     }
 
     unsafe fn transition_buffers<'a, T>(&mut self, barriers: T)
@@ -46,7 +91,12 @@ impl wgpu_hal::CommandEncoder<Api> for CommandEncoder {
         buffer: &<Api as wgpu_hal::Api>::Buffer,
         range: wgpu_hal::MemoryRange,
     ) {
-        todo!()
+        self.commands.push(Command::Clear {
+            buffer: core::ptr::slice_from_raw_parts_mut(
+                buffer.as_ptr().add(range.start as usize).cast_mut().cast(),
+                (range.end - range.start) as usize,
+            ),
+        });
     }
 
     unsafe fn copy_buffer_to_buffer<T>(
@@ -57,19 +107,126 @@ impl wgpu_hal::CommandEncoder<Api> for CommandEncoder {
     ) where
         T: Iterator<Item = wgpu_hal::BufferCopy>,
     {
-        todo!()
+        for BufferCopy {
+            src_offset,
+            dst_offset,
+            size,
+        } in regions
+        {
+            self.commands.push(Command::Copy {
+                src: core::ptr::slice_from_raw_parts_mut(
+                    src.as_ptr().add(src_offset as usize).cast_mut().cast(),
+                    size.get() as usize,
+                ),
+                dst: dst.as_ptr().add(dst_offset as usize).cast_mut().cast(),
+            });
+        }
     }
 
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &<Api as wgpu_hal::Api>::Texture,
-        src_usage: wgpu_hal::TextureUses,
+        _src_usage: wgpu_hal::TextureUses,
         dst: &<Api as wgpu_hal::Api>::Texture,
         regions: T,
     ) where
         T: Iterator<Item = wgpu_hal::TextureCopy>,
     {
-        todo!()
+        match src.dimension {
+            TextureDimension::D1 => {
+                for region in regions {
+                    self.commands.push(Command::Copy {
+                        src: core::slice::from_raw_parts_mut(
+                            src.data
+                                .as_ptr()
+                                .add(region.src_base.origin.x as usize * src.pixel_size)
+                                .cast_mut()
+                                .cast(),
+                            region.size.width as usize * src.pixel_size,
+                        ),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(region.dst_base.origin.x as usize * src.pixel_size)
+                            .cast_mut()
+                            .cast(),
+                    });
+                }
+            }
+            TextureDimension::D2 => {
+                let src_pitch = src.pixel_size * src.size.width as usize;
+                let dst_pitch = src.pixel_size * dst.size.width as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy2 {
+                        src: src
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.src_base.origin.x as usize
+                                    + region.src_base.origin.y as usize * src_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.dst_base.origin.x as usize
+                                    + region.dst_base.origin.y as usize * dst_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        src_pitch,
+                        dst_pitch,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                    });
+                }
+            }
+            TextureDimension::D3 => {
+                let src_pitch = src.pixel_size * src.size.width as usize;
+                let dst_pitch = src.pixel_size * dst.size.width as usize;
+                let src_depth_pitch =
+                    src.pixel_size * src.size.width as usize * src.size.height as usize;
+                let dst_depth_pitch =
+                    src.pixel_size * dst.size.width as usize * dst.size.height as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy3 {
+                        src: src
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.src_base.origin.x as usize
+                                    + region.src_base.origin.y as usize * src_pitch
+                                    + region.src_base.origin.z.max(region.src_base.array_layer)
+                                        as usize
+                                        * src_depth_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.dst_base.origin.x as usize
+                                    + region.dst_base.origin.y as usize * dst_pitch
+                                    + region.dst_base.origin.z.max(region.dst_base.array_layer)
+                                        as usize
+                                        * dst_depth_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        src_pitch,
+                        dst_pitch,
+                        src_depth_pitch,
+                        dst_depth_pitch,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                        depth: region.size.depth as usize,
+                    });
+                }
+            }
+        }
     }
 
     unsafe fn copy_buffer_to_texture<T>(
@@ -80,19 +237,185 @@ impl wgpu_hal::CommandEncoder<Api> for CommandEncoder {
     ) where
         T: Iterator<Item = wgpu_hal::BufferTextureCopy>,
     {
-        todo!()
+        match dst.dimension {
+            TextureDimension::D1 => {
+                for region in regions {
+                    self.commands.push(Command::Copy {
+                        src: core::ptr::slice_from_raw_parts_mut(
+                            src.as_ptr()
+                                .add(region.buffer_layout.offset as usize)
+                                .cast_mut()
+                                .cast(),
+                            region.size.width as usize,
+                        ),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(region.texture_base.origin.x as usize)
+                            .cast_mut()
+                            .cast(),
+                    });
+                }
+            }
+            TextureDimension::D2 => {
+                let dst_pitch = dst.pixel_size * dst.size.width as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy2 {
+                        src: src
+                            .as_ptr()
+                            .add(region.buffer_layout.offset as usize)
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.texture_base.origin.x as usize
+                                    + region.texture_base.origin.y as usize * dst_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        src_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize,
+                        dst_pitch,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                    });
+                }
+            }
+            TextureDimension::D3 => {
+                let dst_pitch = dst.pixel_size * dst.size.width as usize;
+                let dst_depth_pitch =
+                    dst.pixel_size * dst.size.width as usize * dst.size.height as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy3 {
+                        src: src
+                            .as_ptr()
+                            .add(region.buffer_layout.offset as usize)
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.texture_base.origin.x as usize
+                                    + region.texture_base.origin.y as usize * dst_pitch
+                                    + region
+                                        .texture_base
+                                        .origin
+                                        .z
+                                        .max(region.texture_base.array_layer)
+                                        as usize
+                                        * dst_depth_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        src_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize,
+                        dst_pitch,
+                        src_depth_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize
+                            * region.buffer_layout.rows_per_image.unwrap() as usize,
+                        dst_depth_pitch,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                        depth: region.size.depth as usize,
+                    });
+                }
+            }
+        }
     }
 
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &<Api as wgpu_hal::Api>::Texture,
-        src_usage: wgpu_hal::TextureUses,
+        _src_usage: wgpu_hal::TextureUses,
         dst: &<Api as wgpu_hal::Api>::Buffer,
         regions: T,
     ) where
         T: Iterator<Item = wgpu_hal::BufferTextureCopy>,
     {
-        todo!()
+        match src.dimension {
+            TextureDimension::D1 => {
+                for region in regions {
+                    self.commands.push(Command::Copy {
+                        src: core::slice::from_raw_parts_mut(
+                            src.data
+                                .as_ptr()
+                                .add(region.texture_base.origin.x as usize * src.pixel_size)
+                                .cast_mut()
+                                .cast(),
+                            region.size.width as usize * src.pixel_size,
+                        ),
+                        dst: dst
+                            .as_ptr()
+                            .add(region.buffer_layout.offset as usize)
+                            .cast_mut()
+                            .cast(),
+                    });
+                }
+            }
+            TextureDimension::D2 => {
+                let src_pitch = src.pixel_size * src.size.width as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy2 {
+                        src: src
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.texture_base.origin.x as usize
+                                    + region.texture_base.origin.y as usize * src_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .as_ptr()
+                            .add(region.buffer_layout.offset as usize)
+                            .cast_mut()
+                            .cast(),
+                        src_pitch,
+                        dst_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                    });
+                }
+            }
+            TextureDimension::D3 => {
+                let src_pitch = src.pixel_size * src.size.width as usize;
+                let src_depth_pitch =
+                    src.pixel_size * src.size.width as usize * src.size.height as usize;
+                for region in regions {
+                    self.commands.push(Command::Copy3 {
+                        src: src
+                            .data
+                            .as_ptr()
+                            .add(
+                                region.texture_base.origin.x as usize
+                                    + region.texture_base.origin.y as usize * src_pitch
+                                    + region
+                                        .texture_base
+                                        .origin
+                                        .z
+                                        .max(region.texture_base.array_layer)
+                                        as usize
+                                        * src_depth_pitch,
+                            )
+                            .cast_mut()
+                            .cast(),
+                        dst: dst
+                            .as_ptr()
+                            .add(region.buffer_layout.offset as usize)
+                            .cast_mut()
+                            .cast(),
+                        src_pitch,
+                        dst_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize,
+                        src_depth_pitch,
+                        dst_depth_pitch: region.buffer_layout.bytes_per_row.unwrap() as usize
+                            * region.buffer_layout.rows_per_image.unwrap() as usize,
+                        rows: region.size.height as usize,
+                        columns: region.size.width as usize,
+                        depth: region.size.depth as usize,
+                    });
+                }
+            }
+        }
     }
 
     unsafe fn set_bind_group(

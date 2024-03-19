@@ -1,20 +1,8 @@
-use std::{alloc::Layout, mem::MaybeUninit, ptr::NonNull};
+use std::{alloc::Layout, ptr::NonNull};
+
+use wgpu_hal::DeviceError;
 
 use super::{texture::Texture, Api};
-
-unsafe fn alloc(
-    size: usize,
-    align: usize,
-) -> Result<Box<[MaybeUninit<u8>]>, wgpu_hal::DeviceError> {
-    Ok(Box::from_raw(core::ptr::slice_from_raw_parts_mut(
-        std::alloc::alloc(
-            Layout::from_size_align(size, align)
-                .map_err(|_| wgpu_hal::DeviceError::ResourceCreationFailed)?,
-        )
-        .cast(),
-        size,
-    )))
-}
 
 pub struct Device;
 impl wgpu_hal::Device<Api> for Device {
@@ -26,7 +14,10 @@ impl wgpu_hal::Device<Api> for Device {
         &self,
         desc: &wgpu_hal::BufferDescriptor,
     ) -> Result<<Api as wgpu_hal::Api>::Buffer, wgpu_hal::DeviceError> {
-        alloc(desc.size as usize, 32)
+        Ok(super::alloc(
+            Layout::from_size_align(desc.size as usize, 32)
+                .map_err(|_| DeviceError::ResourceCreationFailed)?,
+        ))
     }
 
     unsafe fn destroy_buffer(&self, _buffer: <Api as wgpu_hal::Api>::Buffer) {}
@@ -74,17 +65,7 @@ impl wgpu_hal::Device<Api> for Device {
         &self,
         desc: &wgpu_hal::TextureDescriptor,
     ) -> Result<<Api as wgpu_hal::Api>::Texture, wgpu_hal::DeviceError> {
-        Ok(Texture {
-            size: desc.size,
-            dimension: desc.dimension,
-            format: desc.format,
-            data: alloc(
-                desc.size.width as usize
-                    * desc.size.height as usize
-                    * desc.size.depth_or_array_layers as usize,
-                32,
-            )?,
-        })
+        Texture::new(desc).map_err(|_| DeviceError::ResourceCreationFailed)
     }
 
     unsafe fn destroy_texture(&self, _texture: <Api as wgpu_hal::Api>::Texture) {}

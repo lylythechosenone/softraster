@@ -19,7 +19,7 @@ impl wgpu_hal::Adapter<Api> for Adapter {
 
     unsafe fn surface_capabilities(
         &self,
-        surface: &<Api as wgpu_hal::Api>::Surface,
+        _surface: &<Api as wgpu_hal::Api>::Surface,
     ) -> Option<wgpu_hal::SurfaceCapabilities> {
         todo!()
     }

@@ -1,6 +1,8 @@
-use std::{borrow::Borrow, mem::MaybeUninit};
+#![allow(clippy::cast_possible_truncation)]
 
-use self::texture::Texture;
+use std::{alloc::Layout, borrow::Borrow};
+
+use self::{command_encoder::Command, texture::Texture};
 
 pub mod adapter;
 pub mod command_encoder;
@@ -18,6 +20,13 @@ impl Borrow<<Api as wgpu_hal::Api>::Texture> for Todo {
     }
 }
 
+unsafe fn alloc(layout: Layout) -> Box<[u8]> {
+    Box::from_raw(core::ptr::slice_from_raw_parts_mut(
+        std::alloc::alloc_zeroed(layout).cast(),
+        layout.size(),
+    ))
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Api;
 impl wgpu_hal::Api for Api {
@@ -27,8 +36,8 @@ impl wgpu_hal::Api for Api {
     type Device = device::Device;
     type Queue = queue::Queue;
     type CommandEncoder = command_encoder::CommandEncoder;
-    type CommandBuffer = Todo;
-    type Buffer = Box<[MaybeUninit<u8>]>;
+    type CommandBuffer = Vec<Command>;
+    type Buffer = Box<[u8]>;
     type Texture = Texture;
     type SurfaceTexture = Todo;
     type TextureView = Todo;
