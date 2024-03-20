@@ -35,7 +35,7 @@ impl wgpu_hal::Device<Api> for Device {
                     .cast_mut()
                     .cast(),
             ),
-            is_coherent: true,
+            is_coherent: false,
         })
     }
 
